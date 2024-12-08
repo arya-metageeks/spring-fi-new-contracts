@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.19;
+pragma solidity 0.8.19;
 
 interface ITokenLock {
     function lockTokens(
@@ -13,14 +13,13 @@ interface ITokenLock {
         uint256 _cycleReleasePercentage
     ) external;
 }
-
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@uniswap/v2-core/contracts/interfaces/IUniswapV2Factory.sol";
 import "@uniswap/v2-periphery/contracts/interfaces/IUniswapV2Router02.sol";
 import "@uniswap/v2-core/contracts/interfaces/IUniswapV2Pair.sol";
 
-contract AuctionD is Ownable {
+contract Auction is Ownable {
     struct AuctionStruct {
         ERC20 token;
         ERC20 purchaseToken;
@@ -75,9 +74,6 @@ contract AuctionD is Ownable {
     address public WMATIC = 0x9c3C9283D3e44854697Cd22D3Faa240Cfb032889;
     ITokenLock tokenLock;
 
-
-    constructor() Ownable() {}
-
     function returnLength() external view returns (uint256) {
         return Auctions.length;
     }
@@ -97,10 +93,6 @@ contract AuctionD is Ownable {
     function updateDevFee(uint256 _newFee) external onlyOwner {
         require(_newFee >= 0 && _newFee <= 5, "Must be less than 5%");
         devFee = _newFee;
-    }
-
-    function transferOwnable(address newOwner) external onlyOwner {
-        transferOwnership(newOwner);
     }
 
     function calculateTokensMul(
@@ -145,8 +137,7 @@ contract AuctionD is Ownable {
         uint256 _firstReleasePercentage,
         uint256 _vestingPeriod,
         uint256 _cycleReleasePercentage
-    ) external payable  {
-    // ) external payable onlyOwner {
+    ) external payable {
         require(
             _tokenAddress != address(0),
             "tokenAddress can't be zero address"
@@ -259,7 +250,6 @@ contract AuctionD is Ownable {
         newAuction.vestingPeriod = _vestingPeriod;
         newAuction.cycleReleasePercentage = _cycleReleasePercentage;
         userAuctions[msg.sender].push(Auctions.length - 1);
-        
     }
 
     function whitelistAddress(uint256 _AuctionIndex, address _buyer) external {

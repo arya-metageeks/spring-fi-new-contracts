@@ -20,6 +20,9 @@ interface ITokenLock {
     ) external;
 }
 
+
+//@TODO change devfeeintoken when buytoken()
+
 contract Subscription is Ownable {
     struct SubStruct {
         ERC20 token;
@@ -66,13 +69,23 @@ contract Subscription is Ownable {
     IUniswapV2Factory public immutable uniswapV2Factory;
     IUniswapV2Router02 public immutable uniswapV2Router;
     IUniswapV2Router02 public immutable uniswapV2RouterETH;
+
+
+    // IUniswapV2Factory public uniswapV2Factory =
+    //     IUniswapV2Factory(0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32);  
+    // IUniswapV2Router02 public uniswapV2Router =
+    //     IUniswapV2Router02(0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff);
+    // IUniswapV2Router02 public uniswapV2RouterETH =
+    //     IUniswapV2Router02(0x8954AfA98594b838bda56FE4C12a09D7739D179b);
     address public immutable WMATIC;
-    ITokenLock public tokenLock;
+
+    // address public WMATIC = 0x9c3C9283D3e44854697Cd22D3Faa240Cfb032889;
+    ITokenLock public tokenLock; 
 
     constructor(
-        address _factory,
-        address _router,
-        address _routerETH,
+        address _factory, 
+        address _router, 
+        address _routerETH, 
         address _wmatic,
         address _tokenLock
     ) {
@@ -82,6 +95,7 @@ contract Subscription is Ownable {
         WMATIC = _wmatic;
         tokenLock = ITokenLock(_tokenLock);
     }
+
 
     function returnLength() external view returns (uint256) {
         return subs.length;
@@ -99,15 +113,11 @@ contract Subscription is Ownable {
         return userInvested[_user];
     }
 
-    function updateTokenLock(address _newTokenLock) external onlyOwner {
-        tokenLock = ITokenLock(_newTokenLock);
-    }
-
     function updateDevFee(uint256 _newFee) external onlyOwner {
-        require(_newFee > 0 && _newFee <= MAX_DEV_FEE, "Invalid dev fee");
+        require(_newFee >= 0 && _newFee <= 5, "Must be less than 5%");
         devFee = _newFee;
     }
-
+    
     function updateDevFeeInTokenPercentage(
         uint256 _newPercentage
     ) external onlyOwner {
@@ -166,7 +176,6 @@ contract Subscription is Ownable {
         }
         return tokens;
     }
-
     function createSub(
         address _tokenAddress,
         address _purchaseTokenAddress,
@@ -345,14 +354,306 @@ contract Subscription is Ownable {
         }
     }
 
-    // Remaining functions (finalizePool, claimTokens, handleAfterSale, collectDevCommission) remain the same as in the previous implementation
+    function finalizePool(uint256 _subIndex) external {
+        SubStruct storage sub = subs[_subIndex];
 
+        require(block.timestamp > sub.endTime, "Sub has not ended yet");
+        require(sub.tokensSold >= sub.softCap, "SoftCap was'nt reached");
+        require(sub.finalizedPool == false, "Pool has been finazed already");
+
+        uint256 extraTokens;
+        uint256 sumCommitmentRatio;
+
+        for (uint i = 0; i < sub.investors.length; i++) {
+            address investor = sub.investors[i];
+            uint256 tokens = (sub.tokensInvested[investor] * sub.finHardCap) /
+                sub.finMoneyPer;
+
+            if (sub.tokensPurchased[investor] != sub.hardCapPerUser) {
+                if (
+                    tokens + sub.tokensPurchased[investor] > sub.hardCapPerUser
+                ) {
+                    extraTokens +=
+                        (tokens + sub.tokensPurchased[investor]) -
+                        sub.hardCapPerUser;
+                    sub.tokensPurchased[investor] = sub.hardCapPerUser;
+                } else {
+                    sumCommitmentRatio += sub.tokensInvested[investor];
+                    sub.tokensPurchased[investor] += tokens;
+                }
+            }
+        }
+
+        if (sumCommitmentRatio == 0 && sub.finHardCap != 0) {
+            sub.token.transfer(sub.creator, sub.finHardCap);
+            sub.finHardCap = 0;
+        }
+
+        sub.finMoneyPer = sumCommitmentRatio;
+        sub.finHardCap = extraTokens;
+
+        if (sub.finHardCap == 0) {
+            for (uint i = 0; i < sub.investors.length; i++) {
+                address investor = sub.investors[i];
+                uint256 purchaseTokenDecimals = 18;
+                if (address(sub.purchaseToken) != address(0))
+                    purchaseTokenDecimals = sub.purchaseToken.decimals();
+                uint temp = calculateTokensDiv(
+                    sub.tokensPurchased[investor],
+                    sub.subRate,
+                    sub.token.decimals(),
+                    purchaseTokenDecimals
+                );
+                if (sub.tokensInvested[investor] > temp) {
+                    sub.excessTokensInvested[investor] =
+                        sub.tokensInvested[investor] -
+                        temp;
+                    sub.moneyRaised -= sub.excessTokensInvested[investor];
+                }
+                uint256 devShare;
+                if (sub.devFeeInToken) {
+                    devShare =
+                        ((sub.tokensInvested[investor] -
+                            sub.excessTokensInvested[investor]) *
+                            devFeeInTokenPercentage) /
+                        100;
+                    uint256 devShareInToken = (sub.tokensPurchased[investor] *
+                        devFeeInTokenPercentage) / 100;
+                    sub.devCommissionInToken += devShareInToken;
+                } else
+                    devShare =
+                        ((sub.tokensInvested[investor] -
+                            sub.excessTokensInvested[investor]) * devFee) /
+                        100;
+
+                sub.devCommission += devShare;
+            }
+            sub.finalizedPool = true;
+        }
+    }
+
+    function claimTokens(uint256 _subIndex) external {
+        SubStruct storage sub = subs[_subIndex];
+
+        require(block.timestamp >= sub.endTime, "Sub has not ended yet");
+        require(sub.tokensSold >= sub.softCap, "SoftCap was'nt reached");
+        require(sub.finalizedPool == true, "Pool hasn't been finazed yet");
+        require(sub.tokensPurchased[msg.sender] != 0, "No Tokens purchased");
+
+        uint256 purchaseTokenDecimals = 18;
+        if (address(sub.purchaseToken) != address(0))
+            purchaseTokenDecimals = sub.purchaseToken.decimals();
+        uint temp = calculateTokensDiv(
+            sub.tokensPurchased[msg.sender],
+            sub.subRate,
+            sub.token.decimals(),
+            purchaseTokenDecimals
+        );
+        if (sub.tokensInvested[msg.sender] > temp) {
+            if (address(sub.purchaseToken) == address(0)) {
+                (bool success, ) = payable(msg.sender).call{
+                    value: sub.excessTokensInvested[msg.sender]
+                }("");
+                require(success, "Transfer failed");
+            } else {
+                sub.purchaseToken.transfer(
+                    msg.sender,
+                    sub.excessTokensInvested[msg.sender]
+                );
+            }
+        }
+
+        uint256 tokensToClaim = sub.tokensPurchased[msg.sender];
+        sub.tokensPurchased[msg.sender] = 0;
+        sub.token.transfer(msg.sender, tokensToClaim);
+    }
+
+    function approveAndAddLiquidity(
+        address tokenAddress,
+        address purchaseTokenAddress,
+        uint amountToken,
+        uint amountPurchaseToken,
+        address routerAddress
+    ) private {
+        IERC20(tokenAddress).approve(routerAddress, amountToken);
+        if (purchaseTokenAddress != WMATIC) {
+            IERC20(purchaseTokenAddress).approve(
+                routerAddress,
+                amountPurchaseToken
+            );
+            IUniswapV2Router02(routerAddress).addLiquidity(
+                tokenAddress,
+                purchaseTokenAddress,
+                amountToken,
+                amountPurchaseToken,
+                0,
+                0,
+                address(this),
+                block.timestamp + 360
+            );
+        } else {
+            IUniswapV2Router02(routerAddress).addLiquidityETH{
+                value: amountPurchaseToken
+            }(
+                tokenAddress,
+                amountToken,
+                amountToken,
+                amountPurchaseToken,
+                address(this),
+                block.timestamp + 360
+            );
+        }
+    }
+
+    function getPairAndLockTokens(
+        address tokenAddress,
+        address purchaseTokenAddress,
+        uint unlockTime
+    ) private {
+        address pair = uniswapV2Factory.getPair(
+            tokenAddress,
+            purchaseTokenAddress
+        );
+        uint pairBalance = IERC20(pair).balanceOf(address(this));
+        IERC20(pair).approve(address(tokenLock), pairBalance);
+        tokenLock.lockTokens(
+            pair,
+            msg.sender,
+            pairBalance,
+            unlockTime,
+            false,
+            0,
+            0,
+            0
+        );
+    }
+
+    function handleAfterSale(uint256 _subIndex) external {
+        SubStruct storage sub = subs[_subIndex];
+
+        require(msg.sender == sub.creator, "Only the sub creator can call");
+        require(block.timestamp > sub.endTime, "Sub has not ended yet");
+        require(sub.tokensSold >= sub.softCap, "SoftCap was'nt reached");
+        require(sub.finalizedPool == true, "Pool hasn't been finazed yet");
+
+        uint256 fundsToCollect = sub.moneyRaised - sub.devCommission;
+        require(fundsToCollect > 0, "No funds to collect");
+
+        uint256 purchaseTokenDecimals = 18;
+        if (address(sub.purchaseToken) != address(0))
+            purchaseTokenDecimals = sub.purchaseToken.decimals();
+
+        uint temp = calculateTokens(
+            sub.listingRate,
+            fundsToCollect,
+            sub.token.decimals(),
+            purchaseTokenDecimals
+        );
+        if (temp <= sub.listingAmount) {
+            if (address(sub.purchaseToken) != address(0)) {
+                approveAndAddLiquidity(
+                    address(sub.token),
+                    address(sub.purchaseToken),
+                    temp,
+                    fundsToCollect,
+                    address(uniswapV2Router)
+                );
+                getPairAndLockTokens(
+                    address(sub.token),
+                    address(sub.purchaseToken),
+                    sub.liquidityUnlockTime
+                );
+            } else {
+                approveAndAddLiquidity(
+                    address(sub.token),
+                    WMATIC,
+                    temp,
+                    fundsToCollect,
+                    address(uniswapV2RouterETH)
+                );
+                getPairAndLockTokens(
+                    address(sub.token),
+                    WMATIC,
+                    sub.liquidityUnlockTime
+                );
+            }
+            fundsToCollect = 0;
+        } else {
+            temp = calculateTokensDiv(
+                sub.listingAmount,
+                sub.listingRate,
+                sub.token.decimals(),
+                purchaseTokenDecimals
+            );
+            if (address(sub.purchaseToken) != address(0)) {
+                approveAndAddLiquidity(
+                    address(sub.token),
+                    address(sub.purchaseToken),
+                    sub.listingAmount,
+                    temp,
+                    address(uniswapV2Router)
+                );
+                getPairAndLockTokens(
+                    address(sub.token),
+                    address(sub.purchaseToken),
+                    sub.liquidityUnlockTime
+                );
+            } else {
+                approveAndAddLiquidity(
+                    address(sub.token),
+                    WMATIC,
+                    sub.listingAmount,
+                    temp,
+                    address(uniswapV2RouterETH)
+                );
+                getPairAndLockTokens(
+                    address(sub.token),
+                    WMATIC,
+                    sub.liquidityUnlockTime
+                );
+            }
+            fundsToCollect = fundsToCollect - temp;
+        }
+
+        if (fundsToCollect != 0) {
+            if (address(sub.purchaseToken) == address(0)) {
+                (bool success, ) = payable(sub.creator).call{
+                    value: fundsToCollect
+                }("");
+                require(success, "Transfer failed");
+            } else {
+                sub.purchaseToken.transfer(sub.creator, fundsToCollect);
+            }
+        }
+    }
+
+    function collectDevCommission(uint256 _subIndex) external onlyOwner {
+        SubStruct storage sub = subs[_subIndex];
+
+        require(block.timestamp > sub.endTime, "Sub has not ended yet");
+        require(sub.tokensSold >= sub.softCap, "SoftCap was'nt reached");
+
+        uint256 commission = sub.devCommission;
+        sub.devCommission = 0;
+
+        if (sub.devFeeInToken) {
+            uint commisionInToken = sub.devCommissionInToken;
+            sub.devCommissionInToken = 0;
+            sub.token.transfer(owner(), commisionInToken);
+        }
+
+        if (address(sub.purchaseToken) == address(0)) {
+            (bool success, ) = payable(owner()).call{value: commission}("");
+            require(success, "Transfer failed");
+        } else {
+            sub.purchaseToken.transfer(owner(), commission);
+        }
+    }
+    
     function rescueERC20(
         address _tokenAddress,
         uint256 _amount
     ) external onlyOwner {
         IERC20(_tokenAddress).transfer(owner(), _amount);
     }
-
-    receive() external payable {}
 }
