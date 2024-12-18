@@ -2,7 +2,7 @@ const { ethers } = require("hardhat");
 
 async function main(){
 
-const LiquidityGeneratorTokenFactory = await ethers.getContractFactory("LiquidityGeneratorTokenFactory");
+const LiquidityGeneratorTokenFactory = await ethers.getContractFactory("LiquidityGeneratorTokenFactoryV3");
 const liquidityGeneratorTokenFactory = await LiquidityGeneratorTokenFactory.deploy();
 const liquidityGeneratorTokenFactoryAddress = await liquidityGeneratorTokenFactory.getAddress();
 // const txHash = liquidityGeneratorTokenFactory.deploymentTransaction();
@@ -15,4 +15,6 @@ console.log("liquidityGeneratorTokenFactory contract deployed on", liquidityGene
 main().catch((error) => {
     console.error(error);
     process.exitCode = 1;
-  });
+});
+
+

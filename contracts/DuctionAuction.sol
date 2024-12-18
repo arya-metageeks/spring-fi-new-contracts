@@ -31,6 +31,7 @@ contract AuctionD is Ownable {
         bool vestingEnabled;
         bool devFeeInToken;
         bool auctionFinalized;
+        uint256 auctionId;
         uint256 tokensToSell;
         uint256 softCap;
         uint256 hardCap;
@@ -60,6 +61,9 @@ contract AuctionD is Ownable {
         mapping(address => uint256) lastClaimedCycle;
     }
 
+    uint256 private auctionCounter;
+
+
     uint256 public devFeeInTokenPercentage = 2; // 2%
     uint256 public devFee = 5; // 5%
     AuctionStruct[] public Auctions;
@@ -75,6 +79,15 @@ contract AuctionD is Ownable {
     address public WMATIC = 0x9c3C9283D3e44854697Cd22D3Faa240Cfb032889;
     ITokenLock tokenLock;
 
+    event AuctionCreated(
+        address indexed creator,
+        address tokenAddress,
+        address purchaseTokenAddress,
+        uint256 indexed auctionIndex,
+        uint256 tokensToSell,
+        uint256 startTime,
+        uint256 endTime
+    );
 
     constructor() Ownable() {}
 
@@ -145,8 +158,8 @@ contract AuctionD is Ownable {
         uint256 _firstReleasePercentage,
         uint256 _vestingPeriod,
         uint256 _cycleReleasePercentage
-    ) external payable  {
-    // ) external payable onlyOwner {
+    ) external payable {
+        // ) external payable onlyOwner {
         require(
             _tokenAddress != address(0),
             "tokenAddress can't be zero address"
@@ -179,6 +192,7 @@ contract AuctionD is Ownable {
             "Invalid Release %"
         );
         // require(msg.value == 1 ether, "Creation fee invalid");
+        auctionCounter++;
 
         ERC20 token = ERC20(_tokenAddress);
         uint256 purchaseTokenDecimals = 18;
@@ -259,7 +273,16 @@ contract AuctionD is Ownable {
         newAuction.vestingPeriod = _vestingPeriod;
         newAuction.cycleReleasePercentage = _cycleReleasePercentage;
         userAuctions[msg.sender].push(Auctions.length - 1);
-        
+
+        emit AuctionCreated(
+            msg.sender,
+            _tokenAddress,
+            _purchaseTokenAddress,
+            auctionCounter, // The index of the newly created auction
+            _tokensToSell,
+            _startTime,
+            _endTime
+        );
     }
 
     function whitelistAddress(uint256 _AuctionIndex, address _buyer) external {

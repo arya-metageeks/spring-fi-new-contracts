@@ -16,6 +16,7 @@ module.exports = {
     },
   },
   // defaultNetwork: "localhost",
+
   networks: {
     localhost: {
       url: "http://127.0.0.1:8545",
@@ -29,7 +30,7 @@ module.exports = {
 
     arbitrumSepolia: {
       url: "https://sepolia-rollup.arbitrum.io/rpc",
-      accounts: [process.env.MASTER_PRIVATE_KEY_TESTNET], 
+      accounts: [process.env.ARBI_SEPOLIA_PVT_KEY], 
     },
 
     arbitrumOne: {
@@ -46,5 +47,5 @@ module.exports = {
   },
 };
 
-// npx hardhat verify --network arbitrumSepolia 0xDef487850caB4e931a4b94D330C77130ef173039
+// npx hardhat verify --network arbitrumSepolia 0x8136ae8a9d0eD82e7C607b500960a6B41e31EED7
 

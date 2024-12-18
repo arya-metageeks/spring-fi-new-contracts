@@ -20,7 +20,6 @@ interface ITokenLock {
     ) external;
 }
 
-
 //@TODO change devfeeintoken when buytoken()
 
 contract Subscription is Ownable {
@@ -31,6 +30,7 @@ contract Subscription is Ownable {
         bool whitelistedEnabled;
         bool finalizedPool;
         bool devFeeInToken;
+        uint256 subId;
         uint256 softCap;
         uint256 hardCap;
         uint256 hardCapPerUser;
@@ -70,9 +70,8 @@ contract Subscription is Ownable {
     IUniswapV2Router02 public immutable uniswapV2Router;
     IUniswapV2Router02 public immutable uniswapV2RouterETH;
 
-
     // IUniswapV2Factory public uniswapV2Factory =
-    //     IUniswapV2Factory(0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32);  
+    //     IUniswapV2Factory(0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32);
     // IUniswapV2Router02 public uniswapV2Router =
     //     IUniswapV2Router02(0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff);
     // IUniswapV2Router02 public uniswapV2RouterETH =
@@ -80,12 +79,13 @@ contract Subscription is Ownable {
     address public immutable WMATIC;
 
     // address public WMATIC = 0x9c3C9283D3e44854697Cd22D3Faa240Cfb032889;
-    ITokenLock public tokenLock; 
+    ITokenLock public tokenLock;
+    uint256 private subCounter;
 
     constructor(
-        address _factory, 
-        address _router, 
-        address _routerETH, 
+        address _factory,
+        address _router,
+        address _routerETH,
         address _wmatic,
         address _tokenLock
     ) {
@@ -96,6 +96,14 @@ contract Subscription is Ownable {
         tokenLock = ITokenLock(_tokenLock);
     }
 
+    event SubCreated(
+        address indexed creator,
+        address tokenAddress,
+        address purchaseTokenAddress,
+        uint256 indexed auctionIndex,
+        uint256 startTime,
+        uint256 endTime
+    );
 
     function returnLength() external view returns (uint256) {
         return subs.length;
@@ -117,7 +125,7 @@ contract Subscription is Ownable {
         require(_newFee >= 0 && _newFee <= 5, "Must be less than 5%");
         devFee = _newFee;
     }
-    
+
     function updateDevFeeInTokenPercentage(
         uint256 _newPercentage
     ) external onlyOwner {
@@ -176,6 +184,7 @@ contract Subscription is Ownable {
         }
         return tokens;
     }
+
     function createSub(
         address _tokenAddress,
         address _purchaseTokenAddress,
@@ -212,7 +221,7 @@ contract Subscription is Ownable {
             _liquidityUnlockTime >= MIN_LIQUIDITY_UNLOCK_TIME,
             "liquidityUnlockTime must be >= 30 days"
         );
-
+        subCounter++;
         ERC20 token = ERC20(_tokenAddress);
 
         if (_devFeeInToken) {
@@ -258,6 +267,7 @@ contract Subscription is Ownable {
         newSub.token = ERC20(_tokenAddress);
         newSub.purchaseToken = ERC20(_purchaseTokenAddress);
         newSub.creator = msg.sender;
+        newSub.subId = subCounter;
         newSub.whitelistedEnabled = _whitelistedEnabled;
         newSub.devFeeInToken = _devFeeInToken;
         newSub.softCap = _softCap;
@@ -274,6 +284,17 @@ contract Subscription is Ownable {
             (_listingRate * _hardCap * _liquidityAdditionPercent) /
             (100 * _subRate);
         userSubs[msg.sender].push(subs.length - 1);
+
+        emit SubCreated(
+            msg.sender,
+            _tokenAddress,
+            _purchaseTokenAddress,
+            subCounter, // The index of the newly created auction
+            _startTime,
+            _endTime
+        );
+
+
     }
 
     function whitelistAddress(uint256 _subIndex, address _buyer) external {
@@ -649,7 +670,7 @@ contract Subscription is Ownable {
             sub.purchaseToken.transfer(owner(), commission);
         }
     }
-    
+
     function rescueERC20(
         address _tokenAddress,
         uint256 _amount

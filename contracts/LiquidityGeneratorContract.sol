@@ -21,8 +21,7 @@ interface IUniswapV2Factory {
 }
 
 // Remove the CustomERC20 contract since we don't need this intermediate layer
-
-contract LiquidityGeneratorTokenFactory {
+contract LiquidityGeneratorTokenFactoryV3 {
     mapping(address => bool) public isTokenCreated;
     
     event TokenCreated(
@@ -43,11 +42,15 @@ contract LiquidityGeneratorTokenFactory {
         uint16 charityFeeBps_,
         address serviceFeeReceiver_,
         uint256 serviceFee_
-    ) public payable returns (address) {
-        require(msg.value >= serviceFee_, "Insufficient service fee");
+    ) public  returns (address) {
+    // ) public payable returns (address) {
+        // require(msg.value >= serviceFee_, "Insufficient service fee");
         require(router_ != address(0), "Invalid router");
         require(serviceFeeReceiver_ != address(0), "Invalid fee receiver");
-        require(taxFeeBps_ + liquidityFeeBps_ + charityFeeBps_ <= 10000, "Fees exceed 100%");
+        require(taxFeeBps_ + liquidityFeeBps_ + charityFeeBps_ <= 2500, "Fees exceed 25%");
+        require(bytes(name_).length > 0, "Name cannot be empty");
+        require(bytes(symbol_).length > 0, "Symbol cannot be empty");
+        require(totalSupply_ > 0, "Supply must be positive");
 
         LiquidityGeneratorToken newToken = new LiquidityGeneratorToken(
             name_,
@@ -65,11 +68,11 @@ contract LiquidityGeneratorTokenFactory {
         
         emit TokenCreated(address(newToken), name_, symbol_, totalSupply_);
         
-        payable(serviceFeeReceiver_).transfer(serviceFee_);
+        // payable(serviceFeeReceiver_).transfer(serviceFee_);
         
-        if (msg.value > serviceFee_) {
-            payable(msg.sender).transfer(msg.value - serviceFee_);
-        }
+        // if (msg.value > serviceFee_) {
+        //     payable(msg.sender).transfer(msg.value - serviceFee_);
+        // }
 
         return address(newToken);
     }
