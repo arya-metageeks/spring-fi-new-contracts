@@ -42,10 +42,10 @@ contract FairLaunch is Ownable {
         mapping(address => bool) whitelisted;
         mapping(address => uint256) tokensInvested;
         mapping(address => uint256) affiliateCommission;
+        mapping(address => bool) hasClaimed;
     }
 
     uint256 private launchCounter;
-
 
     uint256 public devFeeInTokenPercentage = 2; // 2%
     uint256 public devFee = 5; // 5%
@@ -206,6 +206,22 @@ contract FairLaunch is Ownable {
         launch.whitelisted[_buyer] = true;
     }
 
+    function whitelistMultipleAddresses(
+        uint256 _launchIndex,
+        address[] calldata _buyers
+    ) external {
+        FairLaunchStruct storage launch = fairLaunch[_launchIndex];
+        require(
+            launch.whitelistedEnabled == true,
+            "Whitelisting is not enabled"
+        );
+        require(msg.sender == launch.creator, "Only creator can whitelist");
+        require(block.timestamp < launch.endTime, "launch has ended");
+        for (uint i = 0; i < _buyers.length; i++) {
+            launch.whitelisted[_buyers[i]] = true;
+        }
+    }
+
     function buyToken(
         uint256 _launchIndex,
         uint256 _amount,
@@ -297,9 +313,13 @@ contract FairLaunch is Ownable {
             "Fairlaunch has not ended yet"
         );
         require(launch.moneyRaised >= launch.softCap, "SoftCap not reached");
+        require(launch.tokensInvested[msg.sender] > 0, "No tokens to claim");
+        require(!launch.hasClaimed[msg.sender], "Tokens already claimed");
 
         uint256 tokensToClaim = (launch.tokensInvested[msg.sender] *
             launch.tokensToSell) / launch.moneyRaised;
+
+        launch.hasClaimed[msg.sender] = true; // Mark as claimed before transfer
         launch.tokensInvested[msg.sender] = 0;
         launch.token.transfer(msg.sender, tokensToClaim);
     }

@@ -53,6 +53,7 @@ contract Subscription is Ownable {
         mapping(address => uint256) tokensPurchased;
         mapping(address => uint256) tokensInvested;
         mapping(address => uint256) excessTokensInvested;
+        mapping(address => bool) hasClaimedTokens; // Add this new field
     }
 
     uint256 public constant MAX_SUB_DURATION = 30 days;
@@ -293,8 +294,6 @@ contract Subscription is Ownable {
             _startTime,
             _endTime
         );
-
-
     }
 
     function whitelistAddress(uint256 _subIndex, address _buyer) external {
@@ -303,6 +302,20 @@ contract Subscription is Ownable {
         require(msg.sender == sub.creator, "Only creator can whitelist");
         require(block.timestamp < sub.endTime, "sub has ended");
         sub.whitelisted[_buyer] = true;
+    }
+
+    function whitelistMultipleAddresses(
+        uint256 _subIndex,
+        address[] calldata _buyers
+    ) external {
+        SubStruct storage sub = subs[_subIndex];
+        require(sub.whitelistedEnabled == true, "Whitelisting is not enabled");
+        require(msg.sender == sub.creator, "Only creator can whitelist");
+        require(block.timestamp < sub.endTime, "sub has ended");
+
+        for (uint i = 0; i < _buyers.length; i++) {
+            sub.whitelisted[_buyers[i]] = true;
+        }
     }
 
     function buyToken(uint256 _subIndex, uint256 _amount) external payable {
@@ -460,16 +473,23 @@ contract Subscription is Ownable {
         require(sub.tokensSold >= sub.softCap, "SoftCap was'nt reached");
         require(sub.finalizedPool == true, "Pool hasn't been finazed yet");
         require(sub.tokensPurchased[msg.sender] != 0, "No Tokens purchased");
+        require(!sub.hasClaimedTokens[msg.sender], "Tokens already claimed"); // Add this check
 
         uint256 purchaseTokenDecimals = 18;
         if (address(sub.purchaseToken) != address(0))
             purchaseTokenDecimals = sub.purchaseToken.decimals();
+
         uint temp = calculateTokensDiv(
             sub.tokensPurchased[msg.sender],
             sub.subRate,
             sub.token.decimals(),
             purchaseTokenDecimals
         );
+
+        // Mark as claimed before transfers (to prevent reentrancy)
+        sub.hasClaimedTokens[msg.sender] = true;
+
+        // Handle excess tokens refund
         if (sub.tokensInvested[msg.sender] > temp) {
             if (address(sub.purchaseToken) == address(0)) {
                 (bool success, ) = payable(msg.sender).call{
@@ -484,6 +504,7 @@ contract Subscription is Ownable {
             }
         }
 
+        // Handle token claim
         uint256 tokensToClaim = sub.tokensPurchased[msg.sender];
         sub.tokensPurchased[msg.sender] = 0;
         sub.token.transfer(msg.sender, tokensToClaim);

@@ -59,10 +59,10 @@ contract AuctionD is Ownable {
         mapping(address => uint256) tokensInvested;
         mapping(address => uint256) tokensVested;
         mapping(address => uint256) lastClaimedCycle;
+        mapping(address => bool) hasClaimedNonVested; // Add for non-vesting claims
     }
 
     uint256 private auctionCounter;
-
 
     uint256 public devFeeInTokenPercentage = 2; // 2%
     uint256 public devFee = 5; // 5%
@@ -296,24 +296,304 @@ contract AuctionD is Ownable {
         auction.whitelisted[_buyer] = true;
     }
 
-    function buyToken(uint256 _auctionIndex, uint256 _amount) external payable {
-        AuctionStruct storage auction = Auctions[_auctionIndex];
+    function whitelistMultipleAddresses(
+        uint256 _AuctionIndex,
+        address[] calldata _buyers
+    ) external {
+        AuctionStruct storage auction = Auctions[_AuctionIndex];
         require(
-            block.timestamp >= auction.startTime,
-            "Auction has not started yet"
+            auction.whitelistedEnabled == true,
+            "Whitelisting is not enabled"
         );
-        require(
-            block.timestamp >= auction.startTime &&
-                block.timestamp <= auction.endTime,
-            "Auction not active"
-        );
-        if (auction.whitelistedEnabled) {
-            require(auction.whitelisted[msg.sender], "Address not whitelisted");
+        require(msg.sender == auction.creator, "Only creator can whitelist");
+        require(block.timestamp < auction.endTime, "auction has ended");
+
+        for (uint i = 0; i < _buyers.length; i++) {
+            auction.whitelisted[_buyers[i]] = true;
         }
+    }
+
+    // function buyToken(
+    //     uint256 _auctionIndex,
+    //     uint256 _tokensWanted
+    // ) external payable {
+    //     AuctionStruct storage auction = Auctions[_auctionIndex];
+
+    //     // Time checks
+    //     require(
+    //         block.timestamp >= auction.startTime,
+    //         "Auction has not started yet"
+    //     );
+    //     require(
+    //         block.timestamp >= auction.startTime &&
+    //             block.timestamp <= auction.endTime,
+    //         "Auction not active"
+    //     );
+
+    //     // Whitelist check
+    //     if (auction.whitelistedEnabled) {
+    //         require(auction.whitelisted[msg.sender], "Address not whitelisted");
+    //     }
+
+    //     // Get purchase token decimals
+    //     uint256 purchaseTokenDecimals = 18; // Default for native token
+    //     if (address(auction.purchaseToken) != address(0)) {
+    //         purchaseTokenDecimals = auction.purchaseToken.decimals();
+    //     }
+
+    //     // Calculate current price
+    //     uint256 elapsed = block.timestamp - auction.startTime;
+    //     uint256 duration = auction.endTime - auction.startTime;
+    //     uint256 totalCycles = duration / (auction.decPriceCycle * 60);
+    //     uint256 currentCycle = elapsed / (auction.decPriceCycle * 60);
+
+    //     if (currentCycle > totalCycles) {
+    //         currentCycle = totalCycles;
+    //     }
+
+    //     uint256 currentPrice = auction.startPrice -
+    //         (currentCycle * (auction.startPrice - auction.endPrice)) /
+    //         totalCycles;
+
+    //     // Calculate total payment required using the helper function
+    //     uint256 totalPaymentRequired = calculateTokensMul(
+    //         _tokensWanted,
+    //         currentPrice,
+    //         purchaseTokenDecimals,
+    //         auction.token.decimals()
+    //     );
+
+    //     // Check buy limits
+    //     require(
+    //         _tokensWanted >= auction.minBuy && _tokensWanted <= auction.maxBuy,
+    //         "Invalid tokens amount"
+    //     );
+
+    //     // Check hard cap
+    //     require(
+    //         auction.tokensSold + _tokensWanted <= auction.tokensToSell,
+    //         "Hard cap reached"
+    //     );
+
+    //     // Handle payment
+    //     if (address(auction.purchaseToken) == address(0)) {
+    //         // Native token payment
+    //         require(
+    //             msg.value == totalPaymentRequired,
+    //             "Incorrect payment amount"
+    //         );
+    //     } else {
+    //         // ERC20 token payment
+    //         require(
+    //             auction.purchaseToken.allowance(msg.sender, address(this)) >=
+    //                 totalPaymentRequired,
+    //             "Check the token allowance"
+    //         );
+    //         auction.purchaseToken.transferFrom(
+    //             msg.sender,
+    //             address(this),
+    //             totalPaymentRequired
+    //         );
+    //     }
+
+    //     // Update auction state
+    //     auction.tokensSold += _tokensWanted;
+    //     auction.moneyRaised += totalPaymentRequired;
+    //     auction.tokensPurchased[msg.sender] += _tokensWanted;
+    //     auction.tokensInvested[msg.sender] += totalPaymentRequired;
+
+    //     // Set last price if hard cap reached
+    //     if (auction.tokensSold >= auction.tokensToSell) {
+    //         auction.lastPrice = currentPrice;
+    //     }
+
+    //     // Record user investment
+    //     userInvested[msg.sender].push(_auctionIndex);
+    // }
+
+    function buyToken(uint256 _auctionIndex, uint256 _tokensWanted) external payable {
+    AuctionStruct storage auction = Auctions[_auctionIndex];
+
+    // Time checks
+    require(block.timestamp >= auction.startTime, "Auction has not started yet");
+    require(
+        block.timestamp >= auction.startTime && block.timestamp <= auction.endTime,
+        "Auction not active"
+    );
+
+    // Whitelist check
+    if (auction.whitelistedEnabled) {
+        require(auction.whitelisted[msg.sender], "Address not whitelisted");
+    }
+
+    // Get purchase token decimals
+    uint256 purchaseTokenDecimals = 18; // Default for native token
+    if (address(auction.purchaseToken) != address(0)) {
+        purchaseTokenDecimals = auction.purchaseToken.decimals();
+    }
+
+    // Calculate current price
+    uint256 elapsed = block.timestamp - auction.startTime;
+    uint256 duration = auction.endTime - auction.startTime;
+    uint256 totalCycles = duration / (auction.decPriceCycle * 60);
+    uint256 currentCycle = elapsed / (auction.decPriceCycle * 60);
+
+    if (currentCycle > totalCycles) {
+        currentCycle = totalCycles;
+    }
+
+    uint256 currentPrice = auction.startPrice -
+        (currentCycle * (auction.startPrice - auction.endPrice)) /
+        totalCycles;
+
+    // Calculate total payment required with proper decimal handling
+    uint256 totalPaymentRequired;
+    if (address(auction.purchaseToken) == address(0)) {
+        // For native token (18 decimals)
+        totalPaymentRequired = (_tokensWanted * currentPrice) / (10 ** auction.token.decimals());
+    } else {
+        // For ERC20 tokens
+        totalPaymentRequired = (_tokensWanted * currentPrice * (10 ** purchaseTokenDecimals)) / 
+            (10 ** (auction.token.decimals() + purchaseTokenDecimals));
+    }
+
+    // Check buy limits
+    require(
+        _tokensWanted >= auction.minBuy && _tokensWanted <= auction.maxBuy,
+        "Invalid tokens amount"
+    );
+
+    // Check hard cap
+    require(
+        auction.tokensSold + _tokensWanted <= auction.tokensToSell,
+        "Hard cap reached"
+    );
+
+    // Handle payment
+    if (address(auction.purchaseToken) == address(0)) {
+        // Native token payment
+        require(msg.value == totalPaymentRequired, "Incorrect payment amount");
+    } else {
+        // ERC20 token payment
         require(
-            _amount >= auction.minBuy && _amount <= auction.maxBuy,
-            "Invalid _amount"
+            auction.purchaseToken.allowance(msg.sender, address(this)) >=
+                totalPaymentRequired,
+            "Check the token allowance"
         );
+        auction.purchaseToken.transferFrom(
+            msg.sender,
+            address(this),
+            totalPaymentRequired
+        );
+    }
+
+    // Update auction state
+    auction.tokensSold += _tokensWanted;
+    auction.moneyRaised += totalPaymentRequired;
+    auction.tokensPurchased[msg.sender] += _tokensWanted;
+    auction.tokensInvested[msg.sender] += totalPaymentRequired;
+
+    // Set last price if hard cap reached
+    if (auction.tokensSold >= auction.tokensToSell) {
+        auction.lastPrice = currentPrice;
+    }
+
+    // Record user investment
+    userInvested[msg.sender].push(_auctionIndex);
+}
+
+    // function buyToken(
+    //     uint256 _auctionIndex,
+    //     uint256 _tokensWanted
+    // ) external payable {
+    //     AuctionStruct storage auction = Auctions[_auctionIndex];
+    //     require(
+    //         block.timestamp >= auction.startTime,
+    //         "Auction has not started yet"
+    //     );
+    //     require(
+    //         block.timestamp >= auction.startTime &&
+    //             block.timestamp <= auction.endTime,
+    //         "Auction not active"
+    //     );
+    //     if (auction.whitelistedEnabled) {
+    //         require(auction.whitelisted[msg.sender], "Address not whitelisted");
+    //     }
+
+    //     // Calculate current price
+    //     uint256 elapsed = block.timestamp - auction.startTime;
+    //     uint256 duration = auction.endTime - auction.startTime;
+    //     uint256 totalCycles = duration / (auction.decPriceCycle * 60);
+    //     uint256 currentCycle = elapsed / (auction.decPriceCycle * 60);
+
+    //     if (currentCycle > totalCycles) {
+    //         currentCycle = totalCycles;
+    //     }
+
+    //     uint256 currentPrice = auction.startPrice -
+    //         (currentCycle * (auction.startPrice - auction.endPrice)) /
+    //         totalCycles;
+
+    //     // Calculate total payment required
+    //     uint256 totalPaymentRequired = (_tokensWanted * currentPrice) /
+    //         (10 ** auction.token.decimals());
+
+    //     require(
+    //         _tokensWanted >= auction.minBuy && _tokensWanted <= auction.maxBuy,
+    //         "Invalid tokens amount"
+    //     );
+
+    //     require(
+    //         auction.tokensSold + _tokensWanted <= auction.tokensToSell,
+    //         "Hard cap reached"
+    //     );
+
+    //     if (address(auction.purchaseToken) == address(0)) {
+    //         // Native token payment
+    //         require(
+    //             msg.value == totalPaymentRequired,
+    //             "Incorrect payment amount"
+    //         );
+    //     } else {
+    //         // ERC20 token payment
+    //         require(
+    //             auction.purchaseToken.allowance(msg.sender, address(this)) >=
+    //                 totalPaymentRequired,
+    //             "Check the token allowance"
+    //         );
+    //         auction.purchaseToken.transferFrom(
+    //             msg.sender,
+    //             address(this),
+    //             totalPaymentRequired
+    //         );
+    //     }
+
+    //     auction.tokensSold += _tokensWanted;
+    //     auction.moneyRaised += totalPaymentRequired;
+    //     auction.tokensPurchased[msg.sender] += _tokensWanted;
+    //     auction.tokensInvested[msg.sender] += totalPaymentRequired;
+
+    //     if (auction.tokensSold >= auction.tokensToSell) {
+    //         auction.lastPrice = currentPrice;
+    //     }
+    //     userInvested[msg.sender].push(_auctionIndex);
+    // }
+
+    // Add this function to your AuctionD contract
+    function getCurrentPrice(
+        uint256 _auctionIndex
+    ) public view returns (uint256) {
+        AuctionStruct storage auction = Auctions[_auctionIndex];
+
+        // If auction hasn't started yet, return start price
+        if (block.timestamp < auction.startTime) {
+            return auction.startPrice;
+        }
+
+        // If auction has ended, return end price
+        if (block.timestamp >= auction.endTime) {
+            return auction.endPrice;
+        }
 
         uint256 elapsed = block.timestamp - auction.startTime;
         uint256 duration = auction.endTime - auction.startTime;
@@ -324,48 +604,33 @@ contract AuctionD is Ownable {
             currentCycle = totalCycles;
         }
 
+        // Calculate current price based on elapsed time and cycles
         uint256 currentPrice = auction.startPrice -
-            (currentCycle * (auction.startPrice - auction.endPrice)) /
-            totalCycles;
+            ((currentCycle * (auction.startPrice - auction.endPrice)) /
+                totalCycles);
 
-        uint256 purchaseTokenDecimals = 18;
-        if (address(auction.purchaseToken) != address(0))
-            purchaseTokenDecimals = auction.purchaseToken.decimals();
-        uint256 tokensToBuy = calculateTokensDiv(
-            _amount,
-            currentPrice,
-            18,
-            auction.token.decimals()
-        );
+        return currentPrice;
+    }
 
-        require(
-            auction.tokensSold + tokensToBuy <= auction.tokensToSell,
-            "Hard cap reached"
-        );
+    // Optional helper function to get time until next price decrease
+    function getTimeUntilNextDecrease(
+        uint256 _auctionIndex
+    ) public view returns (uint256) {
+        AuctionStruct storage auction = Auctions[_auctionIndex];
 
-        if (address(auction.purchaseToken) == address(0)) {
-            require(msg.value >= _amount, "Not enough AVAX provided");
-        } else {
-            require(
-                auction.purchaseToken.allowance(msg.sender, address(this)) >=
-                    _amount,
-                "Check the token allowance"
-            );
-            auction.purchaseToken.transferFrom(
-                msg.sender,
-                address(this),
-                _amount
-            );
+        if (
+            block.timestamp < auction.startTime ||
+            block.timestamp >= auction.endTime
+        ) {
+            return 0;
         }
 
-        auction.tokensSold += tokensToBuy;
-        auction.moneyRaised += _amount;
-        auction.tokensPurchased[msg.sender] += tokensToBuy;
-        auction.tokensInvested[msg.sender] += _amount;
-        if (auction.tokensSold >= auction.tokensToSell) {
-            auction.lastPrice = currentPrice;
-        }
-        userInvested[msg.sender].push(_auctionIndex);
+        uint256 elapsed = block.timestamp - auction.startTime;
+        uint256 currentCycle = elapsed / (auction.decPriceCycle * 60);
+        uint256 nextDecreaseTime = auction.startTime +
+            ((currentCycle + 1) * auction.decPriceCycle * 60);
+
+        return nextDecreaseTime - block.timestamp;
     }
 
     function refundInvestment(uint256 _AuctionId) external {
@@ -451,6 +716,7 @@ contract AuctionD is Ownable {
         uint256 purchaseTokenDecimals = 18;
         if (address(auction.purchaseToken) != address(0))
             purchaseTokenDecimals = ERC20(auction.purchaseToken).decimals();
+
         uint256 actualInvestment = calculateTokensMul(
             auction.tokensPurchased[msg.sender],
             auction.lastPrice,
@@ -508,8 +774,16 @@ contract AuctionD is Ownable {
             auction.token.transfer(msg.sender, toVest);
             auction.lastClaimedCycle[msg.sender] = cyclesPassed;
         } else {
+            // Non-vesting claims
+            require(
+                !auction.hasClaimedNonVested[msg.sender],
+                "Already claimed all tokens"
+            );
             uint256 tokensToClaim = auction.tokensPurchased[msg.sender] -
                 auction.tokensVested[msg.sender];
+            require(tokensToClaim > 0, "No tokens to claim");
+
+            auction.hasClaimedNonVested[msg.sender] = true;
             auction.tokensVested[msg.sender] += tokensToClaim;
             auction.token.transfer(msg.sender, tokensToClaim);
         }

@@ -58,65 +58,65 @@ contract BABYTOKEN is ERC20, Ownable {
     event RewardsDistributed(uint256 amount);
     event RewardClaimed(address indexed account, uint256 amount);
 
-    constructor(
-        string memory name_,
-        string memory symbol_,
-        uint256 totalSupply_,
-        address[4] memory addrs,
-        uint256[3] memory feeSettings,
-        uint256 minimumTokenBalanceForRewards_,
-        address serviceFeeReceiver_,
-        uint256 serviceFee_
-    ) payable ERC20(name_, symbol_) {
-        // Initialize token details
-        _tokenName = name_;
-        _tokenSymbol = symbol_;
+                constructor(
+                    string memory name_,
+                    string memory symbol_,
+                    uint256 totalSupply_,
+                    address[4] memory addrs,
+                    uint256[3] memory feeSettings,
+                    uint256 minimumTokenBalanceForRewards_,
+                    address serviceFeeReceiver_,
+                    uint256 serviceFee_
+                ) payable ERC20(name_, symbol_) {
+                    // Initialize token details
+                    _tokenName = name_;
+                    _tokenSymbol = symbol_;
 
-        // Set addresses
-        rewardToken = addrs[0];
-        routerAddress = addrs[1];
-        marketingWallet = addrs[2];
-        serviceFeeReceiver = serviceFeeReceiver_;
+                    // Set addresses
+                    rewardToken = addrs[0];
+                    routerAddress = addrs[1];
+                    marketingWallet = addrs[2];
+                    serviceFeeReceiver = serviceFeeReceiver_;
 
-        // Set fee configurations
-        tokenRewardsFee = feeSettings[0];
-        liquidityFee = feeSettings[1];
-        marketingFee = feeSettings[2];
-        _totalFees = tokenRewardsFee.add(liquidityFee).add(marketingFee);
+                    // Set fee configurations
+                    tokenRewardsFee = feeSettings[0];
+                    liquidityFee = feeSettings[1];
+                    marketingFee = feeSettings[2];
+                    _totalFees = tokenRewardsFee.add(liquidityFee).add(marketingFee);
 
-        // Set other configurations
-        minimumTokenBalanceForRewards = minimumTokenBalanceForRewards_;
-        serviceFee = serviceFee_;
+                    // Set other configurations
+                    minimumTokenBalanceForRewards = minimumTokenBalanceForRewards_;
+                    serviceFee = serviceFee_;
 
-        // Initialize token supply
-        uint256 total = totalSupply_ * (10 ** _decimals);
-        _mint(address(this), total);
+                    // Initialize token supply
+                    uint256 total = totalSupply_ * (10 ** _decimals);
+                    _mint(address(this), total);
 
-        // Initialize Uniswap router and create pair
-        IUniswapV2Router02 _uniswapV2Router = IUniswapV2Router02(routerAddress);
-        uniswapV2Pair = IUniswapV2Factory(_uniswapV2Router.factory())
-            .createPair(address(this), _uniswapV2Router.WETH());
+                    // Initialize Uniswap router and create pair
+                    IUniswapV2Router02 _uniswapV2Router = IUniswapV2Router02(routerAddress);
+                    uniswapV2Pair = IUniswapV2Factory(_uniswapV2Router.factory())
+                        .createPair(address(this), _uniswapV2Router.WETH());
 
-        // Set initial configurations
-        maxTransactionAmount = total.mul(2).div(100); // 2% of total supply
-        maxWalletAmount = total.mul(3).div(100); // 3% of total supply
-        swapTokensAtAmount = total.mul(5).div(1000); // 0.5% of total supply
+                    // Set initial configurations
+                    maxTransactionAmount = total.mul(2).div(100); // 2% of total supply
+                    maxWalletAmount = total.mul(3).div(100); // 3% of total supply
+                    swapTokensAtAmount = total.mul(5).div(1000); // 0.5% of total supply
 
-        // Exclude from fees
-        _isExcludedFromFees[owner()] = true;
-        _isExcludedFromFees[address(this)] = true;
-        _isExcludedFromFees[marketingWallet] = true;
+                    // Exclude from fees
+                    _isExcludedFromFees[owner()] = true;
+                    _isExcludedFromFees[address(this)] = true;
+                    _isExcludedFromFees[marketingWallet] = true;
 
-        // Exclude from rewards
-        _isExcludedFromRewards[owner()] = true;
-        _isExcludedFromRewards[address(this)] = true;
-        _isExcludedFromRewards[uniswapV2Pair] = true;
+                    // Exclude from rewards
+                    _isExcludedFromRewards[owner()] = true;
+                    _isExcludedFromRewards[address(this)] = true;
+                    _isExcludedFromRewards[uniswapV2Pair] = true;
 
-        // Pay service fee
-        if (msg.value >= serviceFee_) {
-            payable(serviceFeeReceiver).transfer(serviceFee_);
-        }
-    }
+                    // Pay service fee
+                    if (msg.value >= serviceFee_) {
+                        payable(serviceFeeReceiver).transfer(serviceFee_);
+                    }
+                }
 
     // Reward claiming mechanism
     function claimRewards() external {

@@ -26,12 +26,18 @@ contract Airdrop {
     mapping(address => uint256[]) private userAirdrops;
     mapping(address => uint256[]) private userInvested;
 
-
     event AirdropCreated(
         address indexed creator,
         address tokenAddress,
         uint256 indexed airdropIndex,
         uint256 startTime
+    );
+
+    event TokenClaimed(
+        address indexed user,
+        uint256 indexed amount,
+        uint256  claimedAmount,
+        uint256 indexed remainingAllocation
     );
 
     function returnLength() external view returns (uint256) {
@@ -131,7 +137,7 @@ contract Airdrop {
         }
         totalInvestors += _addresses.length;
         userAirdrops[msg.sender].push(airdrops.length - 1);
-        
+
         emit AirdropCreated(
             msg.sender,
             _tokenAddress,
@@ -140,7 +146,7 @@ contract Airdrop {
         );
     }
 
-    function claim(uint256 _airdropId) public {
+    function claim(uint256 _airdropId, uint256 _amount) public {
         AirdropData storage airdrop = airdrops[_airdropId];
         require(block.timestamp >= airdrop.startTime, "Airdrop not started");
         uint256 investorIndex = airdrop.investorIndex[msg.sender];
@@ -149,10 +155,10 @@ contract Airdrop {
             "Nothing to claim"
         );
 
-        uint256 claimable;
+        uint256 maxClaimable;
         if (airdrop.isVesting) {
             if (airdrop.claimed[investorIndex] == 0) {
-                claimable =
+                maxClaimable =
                     (airdrop.currentAllocations[investorIndex] *
                         airdrop.firstReleasePercentage) /
                     100;
@@ -163,7 +169,7 @@ contract Airdrop {
                     24;
                 uint256 cyclesSinceStart = daysSinceStart /
                     airdrop.vestingPeriodInDays;
-                claimable =
+                maxClaimable =
                     (airdrop.currentAllocations[investorIndex] *
                         airdrop.cycleReleasePercentage *
                         cyclesSinceStart) /
@@ -171,13 +177,25 @@ contract Airdrop {
                     airdrop.claimed[investorIndex];
             }
         } else {
-            claimable = airdrop.currentAllocations[investorIndex];
+            maxClaimable = airdrop.currentAllocations[investorIndex];
         }
 
-        require(claimable > 0, "No tokens available to claim");
+        require(maxClaimable > 0, "No tokens available to claim");
+        require(_amount > 0, "Amount must be greater than 0");
+        require(_amount <= maxClaimable, "Amount exceeds claimable tokens");
+        require(
+            _amount <= airdrop.currentAllocations[investorIndex],
+            "Amount exceeds allocation"
+        );
 
-        airdrop.token.transfer(msg.sender, claimable);
-        airdrop.claimed[investorIndex] += claimable;
-        airdrop.currentAllocations[investorIndex] -= claimable;
+        airdrop.token.transfer(msg.sender, _amount);
+        airdrop.claimed[investorIndex] += _amount;
+        airdrop.currentAllocations[investorIndex] -= _amount;
+        emit TokenClaimed(
+            msg.sender,
+            _amount,
+            airdrop.claimed[investorIndex],
+            airdrop.currentAllocations[investorIndex]
+        );
     }
 }

@@ -47,5 +47,5 @@ module.exports = {
   },
 };
 
-// npx hardhat verify --network arbitrumSepolia 0x8136ae8a9d0eD82e7C607b500960a6B41e31EED7
+// npx hardhat verify --network arbitrumSepolia 0x24E56b54aAce58D9d5e3297e1DDFeaA29FAf2635
 

@@ -12,48 +12,65 @@ contract MultiSend is Ownable {
         revert();
     }
 
-    uint256 private multiSendConter;
+    uint256 private multiSendCounter;
 
     event MultiSendCreated(
         address indexed creator,
         address tokenAddress,
-        uint256 indexed multiSendIndex
+        uint256 indexed multiSendIndex,
+        uint256 totalAmount
     );
 
     function multisendToken(
         address token,
         bool ensureExactAmount,
         address[] calldata targets,
-        uint256[] calldata amounts
-    ) external  {
-    // ) external payable {
-        multiSendConter++;
-        if (token == address(0)) {
-            multisendEther(targets, amounts);
-        } else {
-            require(targets.length == amounts.length, "Length mismatched");
-            IERC20 erc20 = IERC20(token);
-            uint256 total = 0;
+        uint256[] calldata amounts,
+        uint256 expectedTotal
+    ) external {
+        require(token != address(0), "Invalid token address");
+        require(targets.length == amounts.length, "Length mismatched");
+        require(targets.length > 0, "Empty arrays");
+        
+        multiSendCounter++;
+        IERC20 erc20 = IERC20(token);
+        uint256 total = 0;
 
-            function(
-                IERC20,
-                address,
-                address,
-                uint256
-            ) transfer = ensureExactAmount
-                    ? _safeTransferFromEnsureExactAmount
-                    : _safeTransferFrom;
+        // Calculate total first
+        for(uint256 i = 0; i < amounts.length; i++) {
+            require(amounts[i] > 0, "Amount must be greater than 0");
+            require(targets[i] != address(0), "Invalid target address");
+            total += amounts[i];
+        }
 
-            for (uint256 i = 0; i < targets.length; i++) {
-                total += amounts[i];
-                transfer(erc20, msg.sender, targets[i], amounts[i]);
-            }
+        // Validate total matches expected
+        require(total == expectedTotal, "Total amount mismatch");
+
+        // Check if sender has sufficient balance
+        require(erc20.balanceOf(msg.sender) >= total, "Insufficient balance");
+
+        // Check if contract has sufficient allowance
+        require(erc20.allowance(msg.sender, address(this)) >= total, "Insufficient allowance");
+
+        function(
+            IERC20,
+            address,
+            address,
+            uint256
+        ) transfer = ensureExactAmount
+                ? _safeTransferFromEnsureExactAmount
+                : _safeTransferFrom;
+
+        // Perform transfers
+        for (uint256 i = 0; i < targets.length; i++) {
+            transfer(erc20, msg.sender, targets[i], amounts[i]);
         }
 
         emit MultiSendCreated(
             msg.sender,
             token,
-            multiSendConter
+            multiSendCounter,
+            total
         );
     }
 
@@ -62,25 +79,20 @@ contract MultiSend is Ownable {
         uint256[] calldata amounts
     ) public payable {
         require(targets.length == amounts.length, "Length mismatched");
+        require(targets.length > 0, "Empty arrays");
 
-        uint256 total;
-        for (uint256 i = 0; i < targets.length; i++) {
+        uint256 total = 0;
+        for (uint256 i = 0; i < amounts.length; i++) {
+            require(amounts[i] > 0, "Amount must be greater than 0");
+            require(targets[i] != address(0), "Invalid target address");
             total += amounts[i];
-            payable(targets[i]).transfer(amounts[i]);
         }
 
         require(total == msg.value, "Total mismatched");
-    }
 
-    function withdrawWronglySentEther(address to) external onlyOwner {
-        payable(to).transfer(address(this).balance);
-    }
-
-    function withdrawWronglySentToken(
-        address token,
-        address to
-    ) external onlyOwner {
-        IERC20(token).safeTransfer(to, IERC20(token).balanceOf(address(this)));
+        for (uint256 i = 0; i < targets.length; i++) {
+            payable(targets[i]).transfer(amounts[i]);
+        }
     }
 
     function _safeTransferFromEnsureExactAmount(
@@ -93,7 +105,7 @@ contract MultiSend is Ownable {
         token.safeTransferFrom(from, to, amount);
         require(
             token.balanceOf(to) - balanceBefore == (from != to ? amount : 0),
-            "Not enough tokens were transfered, check tax and fee options or try setting ensureExactAmount to false"
+            "Not enough tokens were transferred"
         );
     }
 
@@ -104,5 +116,22 @@ contract MultiSend is Ownable {
         uint256 amount
     ) private {
         token.safeTransferFrom(from, to, amount);
+    }
+
+    function withdrawWronglySentEther(address to) external onlyOwner {
+        require(to != address(0), "Invalid address");
+        require(address(this).balance > 0, "No ETH to withdraw");
+        payable(to).transfer(address(this).balance);
+    }
+
+    function withdrawWronglySentToken(
+        address token,
+        address to
+    ) external onlyOwner {
+        require(token != address(0), "Invalid token address");
+        require(to != address(0), "Invalid address");
+        uint256 balance = IERC20(token).balanceOf(address(this));
+        require(balance > 0, "No tokens to withdraw");
+        IERC20(token).safeTransfer(to, balance);
     }
 }
